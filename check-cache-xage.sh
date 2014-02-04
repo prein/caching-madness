@@ -1,21 +1,75 @@
 #!/bin/bash
 
-#url file is exported by c&p from analytics: top-articles-by-wiki-and-namespace, lines in the format: "url pageviews"
-# TODO add option to fetch urls from db
-urlfile="$1"
+#it is good idea to have it sorted by page popularity (pageviews)
 
-cat $urlfile|while read url pageviews; do
-#    echo "url: $url pageviews: $pageviews"
+OPTIND=1         # Reset in case getopts has been used previously in the shell.
+url_file=""
+proxies_file=""
+log_file="cache-check.log"
+max_age=86400
+verbose=0
+dry_run=0
+usage="usage: $(basename "$0") [OPTIONS]
+    -f FILE_WITH_URLS                 url file is one url per line in the format: \"url .*\" (everything after url is ignored)
+    -m max_allowed_age (s)            report and purge pages cached for more then this long, default is 86400 (24h)
+    [-p FILE_WITH_PROXIES_LIST]       (not yet supported) verify across list of proxy servers, one server per line, in the format: 1.2.3.4:80
+    [-l LOG_FILE]                     pring log to this file, default: cache-check.log
+    [-v]                              verbose
+    [-n]                              dry-run: don't purge, only report
+" 
+
+[[ ! $1 ]] && { echo -n "$usage" >&2; exit 1; }
+
+function log () {
+    local logline=$1
+    local logalways=$2
+    if [[ $verbose -eq 1 ]]; then
+        echo "$logline"
+        echo "$logline" >> $log_file
+    elif [[ $logalways -eq 1 ]]; then
+        echo "$logline" >> $log_file
+    fi
+}
+
+while getopts "hvm:f:p:l:n" opt; do
+    case "$opt" in
+    h)
+        echo "$usage"
+        exit 0
+        ;;
+    v)  verbose=1
+        ;;
+    n)  dry_run=1
+        ;;
+    f)  url_file=$OPTARG
+        ;;
+    p)  proxies_file=$OPTARG
+        ;;
+    m)  max_age=$OPTARG
+        ;;
+    l)  log_file=$OPTARG
+        ;;
+    esac
+done
+
+shift $(expr ${OPTIND} - 1)
+
+[[ ! -f $url_file ]] && { echo "$usage" >&2; exit 1; }
+
+#TODO make pv show progress bar correctly, mutted with -q untill this is done
+pv -q -l -s $(wc -l $url_file) $url_file | while read -r url _; do
+    log "checking url: $url"
     echo -n "."
     xageseconds=`curl --compressed -s -I $url|perl -ne 'print $1 if s/X-Age:\s(\d+)/$1/'`
-    if [ $xageseconds -gt 86400 ]; then
-      echo "X-Age > 24h (X-Age=$xageseconds) for url: $url"
-      echo "$url" >> stale-cache.log
-      if [ $xageseconds -gt 604800 ]; then
-        echo "     ******   X-Age > 7d (X-Age=$xageseconds) for url: $url    *****"
+    if [ $xageseconds -gt $max_age ]; then
+      log "X-Age=$xageseconds for url: $url" 1
+      if [[ $dry_run -eq 0 ]]; then
+        log "purging $url"
+        log `curl --compressed -s -X PURGE $url | grep -v ok 2>&1` 1 
+        sleep 0.5
       fi
     fi
-done
+done 
 
 echo
 echo "All urls checked"
