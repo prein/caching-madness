@@ -18,7 +18,7 @@ usage="usage: $(basename "$0") [OPTIONS]
     [-n]                              dry-run: don't purge, only report
 " 
 
-[[ ! $1 ]] && { echo -n "$usage" >&2; exit 1; }
+[[ ! $1 ]] && { echo "$usage" >&2; exit 1; }
 
 function log () {
     local logline=$1
@@ -48,6 +48,9 @@ while getopts "hvm:f:p:l:n" opt; do
     m)  max_age=$OPTARG
         ;;
     l)  log_file=$OPTARG
+        ;;
+    \?) echo "$usage" >&2;
+        exit 1;
         ;;
     esac
 done
