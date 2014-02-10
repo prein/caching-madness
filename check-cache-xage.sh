@@ -63,9 +63,10 @@ shift $(expr ${OPTIND} - 1)
 pv -q -l -s $(wc -l $url_file) $url_file | while read -r url _; do
     log "checking url: $url"
     echo -n "."
-    xageseconds=`curl --compressed -s -I $url|perl -ne 'print $1 if s/X-Age:\s(\d+)/$1/'`
+    read etag servedby xageseconds <<<$(curl --compressed -s -I $url|perl -lne 'print $1 if /(?:X-Age|X-Served-By|ETag):.*\s(.+)$/')
+    xageseconds=${xageseconds//[^[:digit:]]}
     if [ $xageseconds -gt $max_age ]; then
-      log "X-Age=$xageseconds for url: $url" 1
+      log "X-Age: $xageseconds url: $url served_by: $servedby ETag: $etag" 1
       if [[ $dry_run -eq 0 ]]; then
         log "purging $url"
         log `curl --compressed -s -X PURGE $url | grep -v ok 2>&1` 1 
